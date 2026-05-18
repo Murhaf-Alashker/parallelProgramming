@@ -1,0 +1,32 @@
+<?php
+
+namespace Database\Factories;
+
+use App\Models\Order;
+use App\Models\Payment;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
+
+/**
+ * @extends Factory<Payment>
+ */
+class PaymentFactory extends Factory
+{
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'num' => (string) Str::ulid(),
+            'order_id' => Order::factory(),
+            'user_id' => User::factory(),
+            'amount' => fake()->randomFloat(2, 10, 1000),
+            'method' => fake()->randomElement(['wallet', 'card']),
+            'status' => fake()->randomElement(['pending', 'success', 'failed']),
+        ];
+    }
+}
