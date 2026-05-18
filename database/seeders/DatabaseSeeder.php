@@ -30,7 +30,7 @@ class DatabaseSeeder extends Seeder
             ]);
 
             $users = User::factory()
-                ->count(50)
+                ->count(150)
                 ->sequence(fn (Sequence $sequence) => [
                     'name' => 'Test User ' . ($sequence->index + 1),
                     'email' => 'testuser' . ($sequence->index + 1) . '@gmail.com',
@@ -48,7 +48,7 @@ class DatabaseSeeder extends Seeder
                     ['user_id' => $user->id],
                     [
                         'num' =>Str::ulid(),
-                        'balance' => 18,
+                        'balance' => 100,
                     ]
                 );
             }
@@ -63,11 +63,11 @@ class DatabaseSeeder extends Seeder
 
 //            $products = Product::all();
 
-            foreach (range(0, 1000) as $a) {
+            foreach (range(0, 50) as $a) {
                 foreach (User::with('wallet')->get() as $user) {
                     $wallet = $user->wallet;
 
-                    $order = Order::factory()->create([
+                    Order::factory()->create([
                         'user_id' => $user->id,
                         'num' =>Str::ulid(),
                         'status' => 'paid',

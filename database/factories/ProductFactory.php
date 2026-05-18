@@ -22,7 +22,7 @@ class ProductFactory extends Factory
             'category_id' => Category::factory(),
             'name' => fake()->words(2, true),
             'price' => 10,
-            'quantity' => 15,
+            'quantity' => 150,
             'image' => null,
         ];
     }

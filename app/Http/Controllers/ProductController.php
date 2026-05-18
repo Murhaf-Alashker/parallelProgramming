@@ -46,7 +46,7 @@ class ProductController extends Controller
         }
         catch (\Exception $exception)
         {
-            return response()->json(['message' => $exception->getMessage()],400);
+            return response()->json(['message' => $exception->getMessage(),'container' => gethostname(),],400);
         }
 
     }
@@ -125,6 +125,7 @@ class ProductController extends Controller
             'invoice_pdf' => 'you will find your invoice as pdf on: '.url("storage/invoices/order_{$order->id}/invoice.pdf"),
             'invoice_image' => 'you will find your invoice as image on: '.url("storage/invoices/order_{$order->id}/invoice.png"),
             'invoice_status' => 'processing',
+            'container' => gethostname(),
         ]);
     }
 

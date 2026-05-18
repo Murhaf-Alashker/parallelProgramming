@@ -20,10 +20,10 @@ RUN apt-get update && apt-get install -y \
 RUN { \
     echo '[www]'; \
     echo 'pm = dynamic'; \
-    echo 'pm.max_children = 20'; \
-    echo 'pm.start_servers = 5'; \
-    echo 'pm.min_spare_servers = 3'; \
-    echo 'pm.max_spare_servers = 10'; \
+    echo 'pm.max_children = 7'; \
+    echo 'pm.start_servers = 2'; \
+    echo 'pm.min_spare_servers = 2'; \
+    echo 'pm.max_spare_servers = 2'; \
 } > /usr/local/etc/php-fpm.d/zz-custom.conf
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
