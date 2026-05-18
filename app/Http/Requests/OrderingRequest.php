@@ -24,7 +24,7 @@ class OrderingRequest extends FormRequest
     {
         return [
             'email'=>'required|email|exists:users,email',
-            'products' => ['required', 'array', 'min:1'],
+            'products' => ['required', 'array', 'min:1','max:30'],
             'products.*.id' => ['required', 'integer', 'exists:products,id'],
             'products.*.quantity' => ['required', 'integer', 'min:1'],
         ];
