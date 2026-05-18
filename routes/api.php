@@ -11,3 +11,5 @@ Route::post('/order',[ProductController::class,'order']);
 Route::get('/',function(){
     return response()->json(['message'=>'ok']);
 });
+Route::get('/daily-sales',[ProductController::class,'getDailySales']);
+Route::get('/daily_reports/{reportName}',[ProductController::class,'getReport']);

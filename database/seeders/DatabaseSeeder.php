@@ -62,63 +62,65 @@ class DatabaseSeeder extends Seeder
             }
 
 //            $products = Product::all();
+
+            foreach (range(0, 1000) as $a) {
+                foreach (User::with('wallet')->get() as $user) {
+                    $wallet = $user->wallet;
+
+                    $order = Order::factory()->create([
+                        'user_id' => $user->id,
+                        'num' =>Str::ulid(),
+                        'status' => 'paid',
+                        'total_price' => fake()->randomElement(range(20,200)),
+                    ]);
+
+//                    $total = 0;
 //
-//            foreach ($users->take(5) as $user) {
-//                $wallet = $user->wallet;
+//                    $selectedProducts = $products->random(2);
 //
-//                $order = Order::factory()->create([
-//                    'user_id' => $user->id,
-//                    'num' =>Str::ulid(),
-//                    'status' => 'paid',
-//                    'total_price' => 0,
-//                ]);
+//                    foreach ($selectedProducts as $product) {
+//                        $quantity = rand(1, 3);
+//                        $unitPrice = $product->price;
+//                        $itemTotal = $quantity * $unitPrice;
 //
-//                $total = 0;
+//                        OrderItem::factory()->create([
+//                            'order_id' => $order->id,
+//                            'product_id' => $product->id,
+//                            'quantity' => $quantity,
+//                            'unit_price' => $unitPrice,
+//                            'total_price' => $itemTotal,
+//                        ]);
 //
-//                $selectedProducts = $products->random(3);
+//                        $total += $itemTotal;
+//                    }
 //
-//                foreach ($selectedProducts as $product) {
-//                    $quantity = rand(1, 3);
-//                    $unitPrice = $product->price;
-//                    $itemTotal = $quantity * $unitPrice;
-//
-//                    OrderItem::factory()->create([
-//                        'order_id' => $order->id,
-//                        'product_id' => $product->id,
-//                        'quantity' => $quantity,
-//                        'unit_price' => $unitPrice,
-//                        'total_price' => $itemTotal,
+//                    $order->update([
+//                        'total_price' => $total,
 //                    ]);
 //
-//                    $total += $itemTotal;
-//                }
+//                    Payment::factory()->create([
+//                        'order_id' => $order->id,
+//                        'user_id' => $user->id,
+//                        'num' =>Str::ulid(),
+//                        'amount' => $total,
+//                        'method' => 'wallet',
+//                        'status' => 'success',
+//                    ]);
 //
-//                $order->update([
-//                    'total_price' => $total,
-//                ]);
+//                    WalletTransaction::factory()->create([
+//                        'wallet_id' => $wallet->id,
+//                        'order_id' => $order->id,
+//                        'type' => 'withdraw',
+//                        'amount' => $total,
+//                        'balance_before' => $wallet->balance,
+//                        'balance_after' => $wallet->balance - $total,
+//                    ]);
 //
-//                Payment::factory()->create([
-//                    'order_id' => $order->id,
-//                    'user_id' => $user->id,
-//                    'num' =>Str::ulid(),
-//                    'amount' => $total,
-//                    'method' => 'wallet',
-//                    'status' => 'success',
-//                ]);
-//
-//                WalletTransaction::factory()->create([
-//                    'wallet_id' => $wallet->id,
-//                    'order_id' => $order->id,
-//                    'type' => 'withdraw',
-//                    'amount' => $total,
-//                    'balance_before' => $wallet->balance,
-//                    'balance_after' => $wallet->balance - $total,
-//                ]);
-//
-//                $wallet->update([
-//                    'balance' => $wallet->balance - $total,
-//                ]);
-//            }
+//                    $wallet->update([
+//                        'balance' => $wallet->balance - $total,
+//                    ]);
+                }
+            }
         });
     }
 }

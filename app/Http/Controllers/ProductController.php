@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\OrderingRequest;
 use App\Jobs\GenerateInvoiceJob;
+use App\Jobs\ProcessDailySales;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
@@ -11,6 +12,7 @@ use App\Models\Wallet;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -126,94 +128,35 @@ class ProductController extends Controller
         ]);
     }
 
-//    private function generateInvoice($order, User $user): array
-//    {
-//        $folder = "invoices/order_{$order->id}";
-//
-//        Storage::disk('public')->makeDirectory($folder);
-//
-//        $pdfPath = "{$folder}/invoice.pdf";
-//        $imagePath = "{$folder}/invoice.png";
-//
-//        // توليد PDF
-//        $pdf = Pdf::loadView('invoice', [
-//            'order' => $order,
-//            'user' => $user,
-//        ]);
-//
-//        Storage::disk('public')->put($pdfPath, $pdf->output());
-//
-//        // توليد صورة
-//        $height = 350 + ($order->items->count() * 45);
-//
-//        $image = Image::canvas(900, $height, '#ffffff');
-//
-//        $y = 40;
-//
-//        $image->text("Invoice #{$order->num}", 40, $y, function ($font) {
-//            $font->size(28);
-//        });
-//
-//        $y += 50;
-//
-//        $image->text("Customer: {$user->name}", 40, $y, function ($font) {
-//            $font->size(18);
-//        });
-//
-//        $y += 35;
-//
-//        $image->text("Product", 40, $y, function ($font) {
-//            $font->size(16);
-//        });
-//
-//        $image->text("Qty", 360, $y, function ($font) {
-//            $font->size(16);
-//        });
-//
-//        $image->text("Unit Price", 470, $y, function ($font) {
-//            $font->size(16);
-//        });
-//
-//        $image->text("Total", 650, $y, function ($font) {
-//            $font->size(16);
-//        });
-//
-//        $y += 35;
-//
-//        foreach ($order->items as $item) {
-//            $image->text($item->product->name, 40, $y, function ($font) {
-//                $font->size(15);
-//            });
-//
-//            $image->text((string) $item->quantity, 370, $y, function ($font) {
-//                $font->size(15);
-//            });
-//
-//            $image->text((string) $item->unit_price, 480, $y, function ($font) {
-//                $font->size(15);
-//            });
-//
-//            $image->text((string) $item->total_price, 650, $y, function ($font) {
-//                $font->size(15);
-//            });
-//
-//            $y += 40;
-//        }
-//
-//        $y += 30;
-//
-//        $image->text("Final Total: {$order->total_price}", 40, $y, function ($font) {
-//            $font->size(24);
-//        });
-//
-//        Storage::disk('public')->put(
-//            $imagePath,
-//            (string) $image->encode('png')
-//        );
-//
-//        return [
-//            'pdf_url' => asset("storage/{$pdfPath}"),
-//            'image_url' => asset("storage/{$imagePath}"),
-//        ];
-//    }
+    public function getDailySales():JsonResponse
+    {
+        $date = today()->toDateString();
+        ProcessDailySales::dispatch($date);
+        return response()->json([
+            'message' => 'processing daily sales',
+            'status' => 'processing',
+            'url' => url("api/daily_reports/" . $date),
+        ], 202);
+    }
+
+    public function getReport(string $name): JsonResponse
+    {
+        $filePath = "daily_reports/" . $name . ".json";
+
+        if (! Storage::disk('public')->exists($filePath)) {
+            return response()->json([
+                'message' => 'report is still processing or not found',
+            ], 202);
+        }
+
+        $file = Storage::disk('public')->get($filePath);
+
+        return response()->json([
+            'message' => 'daily sales report',
+            'status' => 'ready',
+            'data' => json_decode($file, true),
+        ]);
+    }
+
+
 }
