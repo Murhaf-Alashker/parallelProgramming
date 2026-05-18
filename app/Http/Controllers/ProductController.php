@@ -3,23 +3,32 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\OrderingRequest;
-use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Wallet;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use \Intervention\Image\Facades\Image;
 
 class ProductController extends Controller
 {
     public function order(OrderingRequest $request):JsonResponse
     {
+        //قمنا بعمل validation للطلبات للتاكد بانها موجودة في قاعدة البيانات
         $data = $request->validated();
         $user = User::where('email',$request->email)->firstOrFail();
         $requestedProducts = $this->bringOrderedProducts($data);
+
+        // مثلا في حالة قدوم اكثر من طلب في وقت واحد وبفرض الاول فيه requestedProductsIds = [1,2]
+        //والثاني فيه requestedProductsIds = [2,1]
+        // وتم عمل lock على المنتج ذو المعرفف 1 في اول طلب و على المعرف 2 في ثاني طلب
+        //عندها تصبح لدينا حالة deadlock
+        //قمنا بترتيب ال id الخاصة بالمنتجات لمنع حدوث deadlock
         $requestedProductsIds = $requestedProducts->keys()->sort()->values()->toArray();
 
         try{
@@ -104,11 +113,105 @@ class ProductController extends Controller
             'balance_before' => $balanceBefore,
             'balance_after' => $balanceBefore - $totalPrice,
         ]);
+        $invoice = $this->generateInvoice($order->load('items.product'), $user);
 
         return response()->json([
             'message' => 'payment success',
             'order_id' => $order->id,
             'total_price' => $totalPrice,
+            'invoice_pdf' => $invoice['pdf_url'],
+            'invoice_image' => $invoice['image_url'],
         ]);
+    }
+
+    private function generateInvoice($order, User $user): array
+    {
+        $folder = "invoices/order_{$order->id}";
+
+        Storage::disk('public')->makeDirectory($folder);
+
+        $pdfPath = "{$folder}/invoice.pdf";
+        $imagePath = "{$folder}/invoice.png";
+
+        // توليد PDF
+        $pdf = Pdf::loadView('invoice', [
+            'order' => $order,
+            'user' => $user,
+        ]);
+
+        Storage::disk('public')->put($pdfPath, $pdf->output());
+
+        // توليد صورة
+        $height = 350 + ($order->items->count() * 45);
+
+        $image = Image::canvas(900, $height, '#ffffff');
+
+        $y = 40;
+
+        $image->text("Invoice #{$order->num}", 40, $y, function ($font) {
+            $font->size(28);
+        });
+
+        $y += 50;
+
+        $image->text("Customer: {$user->name}", 40, $y, function ($font) {
+            $font->size(18);
+        });
+
+        $y += 35;
+
+        $image->text("Product", 40, $y, function ($font) {
+            $font->size(16);
+        });
+
+        $image->text("Qty", 360, $y, function ($font) {
+            $font->size(16);
+        });
+
+        $image->text("Unit Price", 470, $y, function ($font) {
+            $font->size(16);
+        });
+
+        $image->text("Total", 650, $y, function ($font) {
+            $font->size(16);
+        });
+
+        $y += 35;
+
+        foreach ($order->items as $item) {
+            $image->text($item->product->name, 40, $y, function ($font) {
+                $font->size(15);
+            });
+
+            $image->text((string) $item->quantity, 370, $y, function ($font) {
+                $font->size(15);
+            });
+
+            $image->text((string) $item->unit_price, 480, $y, function ($font) {
+                $font->size(15);
+            });
+
+            $image->text((string) $item->total_price, 650, $y, function ($font) {
+                $font->size(15);
+            });
+
+            $y += 40;
+        }
+
+        $y += 30;
+
+        $image->text("Final Total: {$order->total_price}", 40, $y, function ($font) {
+            $font->size(24);
+        });
+
+        Storage::disk('public')->put(
+            $imagePath,
+            (string) $image->encode('png')
+        );
+
+        return [
+            'pdf_url' => asset("storage/{$pdfPath}"),
+            'image_url' => asset("storage/{$imagePath}"),
+        ];
     }
 }
