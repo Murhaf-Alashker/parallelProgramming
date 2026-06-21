@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use App\Models\Product;
 use App\Observers\ProductObserver;
+use App\Support\StructuredPerformanceLogger;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,7 +16,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(StructuredPerformanceLogger::class, function () {
+            return new StructuredPerformanceLogger();
+        });
     }
 
     /**
@@ -22,5 +27,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Product::observe(ProductObserver::class);
+        DB::listen(function (QueryExecuted $query) {
+            app(StructuredPerformanceLogger::class)->addQuery(
+                $query->sql,
+                $query->bindings,
+                $query->time
+            );
+        });
     }
 }

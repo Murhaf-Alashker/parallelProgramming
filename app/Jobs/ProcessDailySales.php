@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Order;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -17,7 +18,6 @@ class ProcessDailySales implements ShouldQueue
      */
     public function __construct(public $date)
     {
-        //
     }
 
     /**
@@ -25,6 +25,10 @@ class ProcessDailySales implements ShouldQueue
      */
     public function handle(): void
     {
+        $cache = Cache::store('redis');
+        $key = "report:{$this->date}";
+
+
         $totalSales = 0;
         $totalOrders = 0;
 
@@ -47,9 +51,14 @@ class ProcessDailySales implements ShouldQueue
             'processed_at' => now()->toDateTimeString(),
         ];
 
+
+        $cache->put($key, $report, 3600);
         Storage::disk('public')->put(
             "daily_reports/" . $this->date . ".json",
             json_encode($report, JSON_PRETTY_PRINT)
         );
+        $cache->put("report:{$this->date}:state",'ready');
+
+
     }
 }

@@ -11,7 +11,9 @@ use App\Services\CategoryService;
 use App\Services\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
 {
@@ -30,10 +32,25 @@ class ProductController extends Controller
 
     }
 
-    public function getDailySales():JsonResponse
+    public function getDailySales(string $date = null):JsonResponse
     {
-        $date = today()->toDateString();
-        ProcessDailySales::dispatch($date);
+
+        $date = $date ?? today()->toDateString();
+        $cache = Cache::store('redis');
+
+        $stateKey = "report:{$date}:state";
+        $lockKey = "lock:report:{$date}:dispatch";
+
+        $cache->lock($lockKey, 10)->block(3, function () use ($cache, $stateKey, $date) {
+
+            $state = $cache->get($stateKey);
+
+            if ($state !== 'processing' && $state !== 'ready') {
+                $cache->put($stateKey, 'processing');
+
+                ProcessDailySales::dispatch($date);
+            }
+        });
         return response()->json([
             'message' => 'processing daily sales',
             'status' => 'processing',
@@ -41,22 +58,54 @@ class ProductController extends Controller
         ], 202);
     }
 
-    public function getReport(string $name): JsonResponse
+    public function getReport(string $date): JsonResponse
     {
-        $filePath = "daily_reports/" . $name . ".json";
+        $validator = Validator::make(
+            ['date' => $date],
+            [
+                'date' => ['required', 'date_format:Y-m-d'],
+            ]
+        );
 
-        if (! Storage::disk('public')->exists($filePath)) {
+        if ($validator->fails()) {
             return response()->json([
-                'message' => 'report is still processing or not found',
-            ], 202);
+                'message' => 'Invalid date format',
+                'required_format' => 'YYYY-MM-DD',
+                'example' => '2026-06-20',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+        $cache = Cache::store('redis');
+        $key = "report:{$date}:state";
+        $filePath = "daily_reports/" . $date . ".json";
+        $state = $cache->get($key);
+        if($state == null){
+            return $this->getDailySales($date);
         }
 
-        $file = Storage::disk('public')->get($filePath);
+
+        if($state == 'processing'){
+            return response()->json([
+                'message' => 'processing daily sales',
+                'status' => 'processing',
+                'url' => url("api/daily_reports/" . $date),
+            ], 202);
+        }
+        $dataKey = "report:{$date}";
+        if (!$cache->has($dataKey)){
+            $cache->lock("lock:report:{$date}:cache-fill", 10)->block(3, function () use ($cache, $dataKey, $filePath) {
+
+                if (!$cache->has($dataKey)) {
+                    $file = Storage::disk('public')->get($filePath);
+                    $cache->put($dataKey, json_decode($file, true), 3600);
+                }
+            });
+        }
 
         return response()->json([
             'message' => 'daily sales report',
             'status' => 'ready',
-            'data' => json_decode($file, true),
+            'data' => $cache->get("report:{$date}"),
         ]);
     }
 
@@ -104,7 +153,7 @@ class ProductController extends Controller
     {
         return response()->json([
             'message' => 'product retrieved successfully',
-            'data' => $product->load(['category', 'orderItems.order']),
+            'data' => $product->load(['category']),
         ]);
     }
 
