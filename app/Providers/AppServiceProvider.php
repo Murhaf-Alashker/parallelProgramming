@@ -16,9 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(StructuredPerformanceLogger::class, function () {
-            return new StructuredPerformanceLogger();
-        });
+        //
     }
 
     /**
@@ -27,12 +25,5 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Product::observe(ProductObserver::class);
-        DB::listen(function (QueryExecuted $query) {
-            app(StructuredPerformanceLogger::class)->addQuery(
-                $query->sql,
-                $query->bindings,
-                $query->time
-            );
-        });
     }
 }

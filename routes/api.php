@@ -7,13 +7,9 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
-use App\Http\Middleware\StructuredPerformanceMiddleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return response()->json(['message' => 'ok']);
-});
 Route::get('/flush', function () {
     \Illuminate\Support\Facades\Cache::store('redis')->flush();
     return response()->json(['message' => 'ok']);
@@ -38,11 +34,11 @@ Route::apiResource('order-items', OrderItemController::class)->parameters([
 
 Route::apiResource('payments', PaymentController::class);
 
-Route::middleware([StructuredPerformanceMiddleware::class])->group(function () {
+
     Route::get('/home',[ProductController::class,'homePage']);
 // Main concurrency simulation endpoint
     Route::post('/order', [ProductController::class, 'order']);
 // Daily sales report endpoints
     Route::get('/daily_reports/{date}', [ProductController::class, 'getReport']);
-});
+
 

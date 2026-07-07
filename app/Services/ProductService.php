@@ -8,7 +8,6 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Wallet;
-use App\Support\StructuredPerformanceLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -323,8 +322,5 @@ class ProductService
 
 
 
-    private function trace(string $name, \Closure $callback, array $meta = [])
-    {
-        return app(StructuredPerformanceLogger::class)->span($name, $callback, $meta);
-    }
+
 }
