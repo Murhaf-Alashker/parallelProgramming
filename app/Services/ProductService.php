@@ -25,34 +25,69 @@ class ProductService
     {
         //
     }
-    public function order(User $user,array $data):JsonResponse
+    public function order(User $user, array $data): JsonResponse
     {
-        $requestedProducts = $this->bringOrderedProducts($data);
+        $requestedProducts = $this->trace('ProductService::bringOrderedProducts', function () use ($data) {
+            return $this->bringOrderedProducts($data);
+        }, [
+            'raw_products_count' => count($data['products'] ?? []),
+        ]);
+
         // مثلا في حالة قدوم اكثر من طلب في وقت واحد وبفرض الاول فيه requestedProductsIds = [1,2]
         //والثاني فيه requestedProductsIds = [2,1]
         // وتم عمل lock على المنتج ذو المعرفف 1 في اول طلب و على المعرف 2 في ثاني طلب
         //عندها تصبح لدينا حالة deadlock
         //قمنا بترتيب ال id الخاصة بالمنتجات لمنع حدوث deadlock
-        $requestedProductsIds = $requestedProducts->keys()->sort()->values()->toArray();
-        try{
+        $requestedProductsIds = $this->trace('ProductService::sortRequestedProductIds', function () use ($requestedProducts) {
+            return $requestedProducts->keys()->sort()->values()->toArray();
+        }, [
+            'unique_products_count' => $requestedProducts->count(),
+        ]);
+
+        try {
             //قمنا بعمل transaction من اجل تنفيذ جميع العمليات اللازمة معا
             //تنجح جميعها او تفشل جميعها
-            return DB::transaction(function () use ($requestedProducts,$user,$requestedProductsIds) {
-                //قفل محفظة اليوزر لتجنب حدوث race condition على الاموال
-                $wallet = Wallet::where('user_id', $user->id)
-                    ->lockForUpdate()
-                    ->firstOrFail();
-                //قفل جميع المنتجات في الطلب الى حين معالجتها واتمام عملية الدفع
-                $products = Product::whereIn('id', $requestedProductsIds)->orderBy('id')->lockForUpdate()->get();
-                return $this->processOrder($user, $wallet, $requestedProducts, $products);
-            });
-        }
-        catch (\Exception $exception)
-        {
-            return response()->json(['message' => $exception->getMessage(),'container' => gethostname(),],400);
+            return $this->trace('ProductService::order.DBTransaction', function () use ($requestedProducts, $user, $requestedProductsIds) {
+                return DB::transaction(function () use ($requestedProducts, $user, $requestedProductsIds) {
+
+                    //قفل محفظة اليوزر لتجنب حدوث race condition على الاموال
+                    $wallet = $this->trace('ProductService::lockWalletForUpdate', function () use ($user) {
+                        return Wallet::where('user_id', $user->id)
+                            ->lockForUpdate()
+                            ->firstOrFail();
+                    }, [
+                        'user_id' => $user->id,
+                    ]);
+
+                    //قفل جميع المنتجات في الطلب الى حين معالجتها واتمام عملية الدفع
+                    $products = $this->trace('ProductService::lockProductsForUpdate', function () use ($requestedProductsIds) {
+                        return Product::whereIn('id', $requestedProductsIds)
+                            ->orderBy('id')
+                            ->get();
+                    }, [
+                        'product_ids' => $requestedProductsIds,
+                    ]);
+
+                    return $this->trace('ProductService::processOrder', function () use ($user, $wallet, $requestedProducts, $products) {
+                        return $this->processOrder($user, $wallet, $requestedProducts, $products);
+                    }, [
+                        'user_id' => $user->id,
+                        'products_count' => $products->count(),
+                    ]);
+                });
+            }, [
+                'user_id' => $user->id,
+                'requested_product_ids' => $requestedProductsIds,
+            ]);
+        } catch (\Exception $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'container' => gethostname(),
+            ], 400);
         }
     }
-    private function bringOrderedProducts(array $data):Collection
+
+    private function bringOrderedProducts(array $data): Collection
     {
         // إذا نفس المنتج تكرر بالطلب، منجمع الكميات تبعو
         return collect($data['products'])
@@ -60,55 +95,89 @@ class ProductService
             ->map(function ($items) {
                 return $items->sum('quantity');
             });
-
     }
 
-    private function processOrder(User $user,Wallet $wallet,Collection $requestedProducts,Collection $products):JsonResponse
+    private function processOrder(User $user, Wallet $wallet, Collection $requestedProducts, Collection $products): JsonResponse
     {
-        $totalPrice = $this->getTotalPrice($products, $requestedProducts);
+        $totalPrice = $this->trace('ProductService::getTotalPrice', function () use ($products, $requestedProducts) {
+            return $this->getTotalPrice($products, $requestedProducts);
+        }, [
+            'products_count' => $products->count(),
+        ]);
 
-        // فحص رصيد المحفظة
-        if ($wallet->balance < $totalPrice) {
-            throw new \Exception('you dont have enough balance');
-        }
+        $this->trace('ProductService::checkWalletBalance', function () use ($wallet, $totalPrice) {
+            // فحص رصيد المحفظة
+            if ($wallet->balance < $totalPrice) {
+                throw new \Exception('you dont have enough balance');
+            }
+
+            return true;
+        }, [
+            'wallet_id' => $wallet->id,
+            'balance' => $wallet->balance,
+            'total_price' => $totalPrice,
+        ]);
 
         // إنشاء الطلب
-        $order = $this->orderService->store($user,$totalPrice);
+        $order = $this->trace('OrderService::store', function () use ($user, $totalPrice) {
+            return $this->orderService->store($user, $totalPrice);
+        }, [
+            'user_id' => $user->id,
+            'total_price' => $totalPrice,
+        ]);
 
-        $this->decrementProductsAndCreateOrderItems($products,$requestedProducts,$order);
+        $this->trace('ProductService::decrementProductsAndCreateOrderItems', function () use ($products, $requestedProducts, $order) {
+            $this->decrementProductsAndCreateOrderItems($products, $requestedProducts, $order);
+        }, [
+            'order_id' => $order->id,
+            'products_count' => $products->count(),
+        ]);
 
         // خصم الكميات وإنشاء عناصر الطلب
-        $this->walletService->decrementAndCreateTransaction($wallet,$order,$totalPrice);
+        $this->trace('WalletService::decrementAndCreateTransaction', function () use ($wallet, $order, $totalPrice) {
+            $this->walletService->decrementAndCreateTransaction($wallet, $order, $totalPrice);
+        }, [
+            'wallet_id' => $wallet->id,
+            'order_id' => $order->id,
+            'total_price' => $totalPrice,
+        ]);
 
-        GenerateInvoiceJob::dispatch($order->id)->afterCommit();
+        $this->trace('GenerateInvoiceJob::dispatchAfterCommit', function () use ($order) {
+            GenerateInvoiceJob::dispatch($order->id)->afterCommit();
+        }, [
+            'order_id' => $order->id,
+        ]);
 
         return response()->json([
             'message' => 'payment success',
             'order_id' => $order->id,
             'total_price' => $totalPrice,
-            'invoice_pdf' => 'you will find your invoice as pdf on: '.url("storage/invoices/order_{$order->id}/invoice.pdf"),
-            'invoice_image' => 'you will find your invoice as image on: '.url("storage/invoices/order_{$order->id}/invoice.png"),
+            'invoice_pdf' => 'you will find your invoice as pdf on: ' . url("storage/invoices/order_{$order->id}/invoice.pdf"),
+            'invoice_image' => 'you will find your invoice as image on: ' . url("storage/invoices/order_{$order->id}/invoice.png"),
             'invoice_status' => 'processing',
             'container' => gethostname(),
         ]);
     }
 
-    private function getTotalPrice(Collection $products, Collection $requestedProducts):float
+    private function getTotalPrice(Collection $products, Collection $requestedProducts): float
     {
         $totalPrice = 0;
+
         // فحص الكميات وحساب السعر النهائي
         foreach ($products as $product) {
             $quantity = $requestedProducts[$product->id];
+
             if ($product->quantity < $quantity) {
                 throw new \Exception('there is no enough stock');
             }
 
             $totalPrice += $product->price * $quantity;
         }
+
         return $totalPrice;
     }
 
-    private function decrementProductsAndCreateOrderItems(Collection $products, Collection $requestedProducts, Order $order):void
+    private function decrementProductsAndCreateOrderItems(Collection $products, Collection $requestedProducts, Order $order): void
     {
         $orderItemsData = [];
         $now = Carbon::now();
@@ -116,7 +185,18 @@ class ProductService
         foreach ($products as $product) {
             $quantity = $requestedProducts[$product->id];
 
-            $product->decrement('quantity', $quantity);
+            $this->trace('Product::decrementQuantity', function () use ($product, $quantity) {
+                $updated = Product::where('id', $product->id)
+                    ->where('quantity', '>=', $quantity)
+                    ->decrement('quantity', $quantity);
+
+                if ($updated === 0) {
+                    throw new \Exception('there is no enough stock');
+                }
+            }, [
+                'product_id' => $product->id,
+                'quantity' => $quantity,
+            ]);
 
             $orderItemsData[] = [
                 'order_id' => $order->id,
@@ -129,8 +209,11 @@ class ProductService
             ];
         }
 
-        OrderItem::insert($orderItemsData);
-
+        $this->trace('OrderItem::bulkInsert', function () use ($orderItemsData) {
+            OrderItem::insert($orderItemsData);
+        }, [
+            'items_count' => count($orderItemsData),
+        ]);
     }
     public function latestProducts()
     {

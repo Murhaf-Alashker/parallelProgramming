@@ -34,6 +34,7 @@ class StructuredPerformanceLogger
 
         $this->requestMeta = [
             'request_id' => $this->requestId,
+            'type' => 'http',
             'method' => $request->method(),
             'path' => $request->path(),
             'full_url' => $request->fullUrl(),
@@ -44,6 +45,32 @@ class StructuredPerformanceLogger
             'pid' => getmypid(),
             'started_at' => now()->toDateTimeString(),
         ];
+    }
+
+    public function startJob(string $jobName, array $meta = []): void
+    {
+        $this->active = true;
+        $this->requestId = (string) str()->uuid();
+        $this->startedAt = microtime(true);
+        $this->startedMemory = memory_get_usage(true);
+
+        $this->queries = [];
+        $this->spans = [];
+        $this->exception = null;
+
+        $this->requestMeta = array_merge([
+            'request_id' => $this->requestId,
+            'type' => 'job',
+            'method' => 'JOB',
+            'path' => $jobName,
+            'full_url' => null,
+            'route_name' => null,
+            'user_id' => null,
+            'ip' => null,
+            'container' => gethostname(),
+            'pid' => getmypid(),
+            'started_at' => now()->toDateTimeString(),
+        ], $meta);
     }
 
     public function addQuery(string $sql, array $bindings, float $timeMs): void
@@ -126,7 +153,7 @@ class StructuredPerformanceLogger
             ->all();
 
         $payload = [
-            'type' => 'request_performance',
+            'type' => 'performance_event',
             'request' => $this->requestMeta,
             'response' => [
                 'status' => $response?->getStatusCode(),
@@ -163,6 +190,10 @@ class StructuredPerformanceLogger
         return array_map(function ($value) {
             if (is_string($value) && strlen($value) > 200) {
                 return substr($value, 0, 200) . '...';
+            }
+
+            if ($value instanceof \DateTimeInterface) {
+                return $value->format('Y-m-d H:i:s');
             }
 
             return $value;

@@ -28,7 +28,7 @@ class ProductObserver
      */
     public function updated(Product $product): void
     {
-        $this->clearProductCache();
+
         $changed = array_keys($product->getChanges());
 
         $realChanges = array_diff($changed, ['quantity', 'updated_at']);
@@ -36,6 +36,7 @@ class ProductObserver
         if (empty($realChanges)) {
             return;
         }
+        $this->clearProductCache();
         Cache::store('redis')->forget('products:popular:weekly');
     }
 
